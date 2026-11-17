@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	minipdf "github.com/mini-software/MiniPdf/minipdf-go"
+	minipdf "github.com/PdfLibrarys/minipdf-go"
 )
 
 func TestParseArgumentsAcceptsVersionWithoutInput(t *testing.T) {

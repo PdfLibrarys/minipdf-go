@@ -1,4 +1,4 @@
-module github.com/mini-software/MiniPdf/minipdf-go
+module github.com/PdfLibrarys/minipdf-go
 
 go 1.22
 

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	minipdf "github.com/mini-software/MiniPdf/minipdf-go"
+	minipdf "github.com/PdfLibrarys/minipdf-go"
 )
 
 var (

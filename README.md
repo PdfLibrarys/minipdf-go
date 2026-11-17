@@ -3,8 +3,8 @@
 The experimental native Go implementation of MiniPdf. It provides a reusable
 `minipdf` package and a dependency-free command-line application.
 
-[Project portal](../README.md) | [Rust implementation](../minipdf-rs/README.md) |
-[.NET implementation](../documents/README.nuget.md)
+[Project portal](https://github.com/mini-software/MiniPdf) | [Rust implementation](https://github.com/PdfLibrarys/minipdf-rs) |
+[.NET implementation](https://github.com/mini-software/MiniPdf/blob/main/documents/README.nuget.md)
 
 > The Go implementation is an early foundation and is not feature-equivalent
 > with MiniPdf for .NET or Rust. It currently renders basic text from XLSX,
@@ -21,7 +21,7 @@ The experimental native Go implementation of MiniPdf. It provides a reusable
 ```go
 package main
 
-import minipdf "github.com/mini-software/MiniPdf/minipdf-go"
+import minipdf "github.com/PdfLibrarys/minipdf-go"
 
 func main() {
 	if err := minipdf.ConvertToPDF("report.docx", "report.pdf"); err != nil {
@@ -109,7 +109,7 @@ pdf, err := minipdf.ConvertBytesToPDFWithOptions(input, minipdf.ConversionOption
 ## Command Line
 
 ```powershell
-go install github.com/mini-software/MiniPdf/minipdf-go/cmd/minipdf@latest
+go install github.com/PdfLibrarys/minipdf-go/cmd/minipdf@latest
 minipdf report.docx
 minipdf data.xlsx -o data.pdf
 minipdf slides.pptx --paper-size a4
@@ -222,7 +222,7 @@ full Office font/layout fidelity are not supported.
 ## Development
 
 ```powershell
-cd minipdf-go
+Set-Location path\to\minipdf-go
 go fmt ./...
 go vet ./...
 go test ./...
@@ -232,18 +232,17 @@ go run ./cmd/minipdf path\to\input.docx
 ## Publishing
 
 Go modules are published from Git tags rather than uploaded to a package
-registry. Because this module is in the `minipdf-go` repository subdirectory,
-its tags must include that prefix.
+registry. The module is at the repository root, so tags use `v<version>`.
 
 After the release change has been merged to `main`, create and push a semantic
 version tag from the release commit:
 
 ```powershell
-git tag minipdf-go/v<version>
-git push origin minipdf-go/v<version>
+git tag v<version>
+git push origin v<version>
 ```
 
-The [Go Release workflow](../.github/workflows/go-release.yml) validates the
+The [Go Release workflow](.github/workflows/go-release.yml) validates the
 module, builds Windows, Linux, and macOS CLI archives for AMD64 and ARM64,
 writes SHA-256 checksums, and creates the GitHub Release. No package registry
 token is required. The public Go module proxy discovers the library from the
@@ -252,8 +251,8 @@ same tag.
 Verify the published module:
 
 ```powershell
-go list -m github.com/mini-software/MiniPdf/minipdf-go@v<version>
-go install github.com/mini-software/MiniPdf/minipdf-go/cmd/minipdf@v<version>
+go list -m github.com/PdfLibrarys/minipdf-go@v<version>
+go install github.com/PdfLibrarys/minipdf-go/cmd/minipdf@v<version>
 minipdf --version
 ```
 
@@ -262,4 +261,11 @@ does not create tags, so a manual run cannot publish an untagged Go module.
 
 ## License
 
-[Apache License 2.0](../LICENSE).
+[Apache License 2.0](LICENSE).
+## Repository migration
+
+This implementation now lives in [https://github.com/PdfLibrarys/minipdf-go](https://github.com/PdfLibrarys/minipdf-go). Its language-specific
+Git history was preserved from [MiniPdf](https://github.com/mini-software/MiniPdf)
+(source commit `862ab485fdf8c5b3d3ec76afb6145f4ff68bf987`).
+The original repository maintains the .NET implementation. Open issues and
+pull requests for this implementation in this repository.
