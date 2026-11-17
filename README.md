@@ -1,5 +1,7 @@
 # MiniPdf for Go
 
+[English](README.md) | [zh-CN](docs/README.zh-CN.md) | [zh-TW](docs/README.zh-TW.md) | [ja](docs/README.ja.md) | [ko](docs/README.ko.md) | [it](docs/README.it.md) | [fr](docs/README.fr.md)
+
 The experimental native Go implementation of MiniPdf. It provides a reusable
 `minipdf` package and a dependency-free command-line application.
 
@@ -269,3 +271,7 @@ Git history was preserved from [MiniPdf](https://github.com/mini-software/MiniPd
 (source commit `862ab485fdf8c5b3d3ec76afb6145f4ff68bf987`).
 The original repository maintains the .NET implementation. Open issues and
 pull requests for this implementation in this repository.
+
+## Visual results
+
+- [XLSX](https://mini-software.github.io/minipdf-web-page/?language=go&suite=issue&format=xlsx)
