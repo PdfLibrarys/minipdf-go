@@ -8,6 +8,7 @@ import (
 
 type xlsxPrintSettings struct {
 	areas         []xlsxMerge
+	usedArea      bool
 	rows, columns xlsxRange
 	date1904      bool
 	sheetName     string
@@ -97,6 +98,32 @@ func xlsxPrintBands(span xlsxRange, available float64, size func(int) float64, t
 		start = end
 	}
 	return bands, nil
+}
+
+// trimToUsedArea shrinks the grid to the cells that print when a sheet defines
+// no print area: those holding a value, a fill, or a border. Cells that only
+// carry an invisible style, which the sheet dimension still counts, are left
+// out so that they do not produce blank pages.
+func (grid *xlsxGrid) trimToUsedArea(styles []xlsxStyle) {
+	used := make(map[[2]int]bool)
+	maxRow, maxColumn := 0, 0
+	for key, cell := range grid.cells {
+		style := styleAt(styles, cell.style)
+		border := style.border
+		if strings.TrimSpace(cell.value) == "" && style.fill == nil && border.left == 0 && border.right == 0 && border.top == 0 && border.bottom == 0 {
+			continue
+		}
+		used[key] = true
+		maxRow = max(maxRow, cell.row)
+		maxColumn = max(maxColumn, cell.column)
+	}
+	for _, merge := range grid.merges {
+		if used[[2]int{merge.startRow, merge.startColumn}] {
+			maxRow = max(maxRow, merge.endRow)
+			maxColumn = max(maxColumn, merge.endColumn)
+		}
+	}
+	grid.maxRow, grid.maxColumn = maxRow, maxColumn
 }
 
 func limitXLSXPrintArea(grid xlsxGrid, area xlsxMerge, options ConversionOptions) xlsxMerge {

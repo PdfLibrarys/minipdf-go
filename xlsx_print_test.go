@@ -2,6 +2,8 @@ package minipdf
 
 import (
 	"bytes"
+	"image"
+	"image/png"
 	"strings"
 	"testing"
 )
@@ -250,5 +252,152 @@ func TestXLSXPrintAreaPaintsTextAfterAdjacentFills(t *testing.T) {
 	operations := document.pages[0].operations
 	if _, ok := operations[len(operations)-1].(textOperation); !ok {
 		t.Fatal("adjacent cell fill can paint over the overflowing report title")
+	}
+}
+
+func TestConvertXLSXPrintsUsedAreaOfStyledSheetWithoutPrintArea(t *testing.T) {
+	entries := map[string]string{
+		"xl/workbook.xml": `<workbook><sheets><sheet name="Forecast"/></sheets></workbook>`,
+		"xl/styles.xml": `<styleSheet><fonts><font><sz val="11"/></font></fonts>` +
+			`<fills><fill><patternFill/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0000FF"/></patternFill></fill></fills>` +
+			`<cellXfs><xf/><xf fillId="1"/><xf numFmtId="4"/></cellXfs></styleSheet>`,
+		// The dimension reaches row 200 only through a cell whose style paints
+		// nothing, and the extension list repeats a worksheet element name.
+		"xl/worksheets/sheet1.xml": `<worksheet xmlns:x14="urn:x14"><dimension ref="A1:C200"/><sheetData>` +
+			`<row r="1"><c r="A1" s="1" t="inlineStr"><is><t>Title</t></is></c></row>` +
+			`<row r="2"><c r="B2" s="2"><f>B3*2</f><v>1234.5</v></c></row>` +
+			`<row r="200"><c r="C200" s="0"/></row></sheetData>` +
+			`<extLst><ext><x14:conditionalFormattings><x14:conditionalFormatting><x14:cfRule type="dataBar"/>` +
+			`</x14:conditionalFormatting></x14:conditionalFormattings></ext></extLst></worksheet>`,
+	}
+	pdf, err := ConvertBytesToPDF(officePackageBytes(t, entries))
+	assertPDFContains(t, pdf, err, "Title", "1,234.50", "0 0 1 rg")
+	if count := bytes.Count(pdf, []byte("/Type /Page ")); count != 1 {
+		t.Fatalf("pages = %d, want the used cells on 1 page", count)
+	}
+}
+
+func TestConvertXLSXUsedAreaFallsBackToTextLayout(t *testing.T) {
+	styles := `<styleSheet><fonts><font><sz val="11"/></font></fonts><cellXfs><xf/></cellXfs></styleSheet>`
+	tests := map[string]string{
+		"unsupported footer code": `<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Kept</t></is></c></row></sheetData>` +
+			`<headerFooter><oddFooter>&amp;D</oddFooter></headerFooter></worksheet>`,
+		"invalid conditional range": `<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Kept</t></is></c></row></sheetData>` +
+			`<conditionalFormatting sqref="A:A"><cfRule type="expression" priority="1"><formula>TRUE</formula></cfRule></conditionalFormatting></worksheet>`,
+	}
+	for name, worksheet := range tests {
+		t.Run(name, func(t *testing.T) {
+			pdf, err := ConvertBytesToPDF(officePackageBytes(t, map[string]string{
+				"xl/workbook.xml": `<workbook><sheets><sheet name="Data"/></sheets></workbook>`,
+				"xl/styles.xml":   styles, "xl/worksheets/sheet1.xml": worksheet,
+			}))
+			assertPDFContains(t, pdf, err, "Kept")
+			if count := bytes.Count(pdf, []byte("/Type /Page ")); count != 1 {
+				t.Fatalf("pages = %d, want 1 text page and no partial grid pages", count)
+			}
+		})
+	}
+}
+
+func TestConvertXLSXUsedAreaIncludesPictureBeyondCells(t *testing.T) {
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	pdf, err := ConvertBytesToPDF(officePackageBytes(t, map[string]string{
+		"xl/workbook.xml": `<workbook><sheets><sheet name="Logo"/></sheets></workbook>`,
+		"xl/styles.xml":   `<styleSheet><fonts><font><sz val="11"/></font></fonts><cellXfs><xf/></cellXfs></styleSheet>`,
+		"xl/worksheets/sheet1.xml": `<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Title</t></is></c></row>` +
+			`</sheetData></worksheet>`,
+		"xl/worksheets/_rels/sheet1.xml.rels": `<Relationships><Relationship Type="urn:office/drawing" Target="../drawings/drawing1.xml"/></Relationships>`,
+		// The picture fits inside D6, which no cell reaches.
+		"xl/drawings/drawing1.xml": `<wsDr><oneCellAnchor><from><col>3</col><row>5</row></from><ext cx="127000" cy="127000"/>` +
+			`<pic><blipFill><blip embed="image"/></blipFill></pic><clientData/></oneCellAnchor></wsDr>`,
+		"xl/drawings/_rels/drawing1.xml.rels": `<Relationships><Relationship Id="image" Type="urn:office/image" Target="../media/logo.png"/></Relationships>`,
+		"xl/media/logo.png":                   encoded.String(),
+	}))
+	assertPDFContains(t, pdf, err, "Title", "/ASCIIHexDecode /FlateDecode")
+	if count := bytes.Count(pdf, []byte("/Type /Page ")); count != 1 {
+		t.Fatalf("pages = %d, want 1", count)
+	}
+}
+
+func TestReadXLSXGridPlacesRowsAndCellsWithoutReferences(t *testing.T) {
+	grid, err := readXLSXGrid([]byte(`<worksheet><sheetData>`+
+		`<row><c t="inlineStr"><is><t>A1</t></is></c><c t="inlineStr"><is><t>B1</t></is></c></row>`+
+		`<row r="4" ht="30"><c r="C4" t="inlineStr"><is><t>C4</t></is></c><c t="inlineStr"><is><t>D4</t></is></c></row>`+
+		`<row><c t="inlineStr"><is><t>A5</t></is></c></row></sheetData></worksheet>`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[[2]int]string{{1, 1}: "A1", {1, 2}: "B1", {4, 3}: "C4", {4, 4}: "D4", {5, 1}: "A5"} {
+		if got := grid.cells[key].value; got != want {
+			t.Errorf("cell %v = %q, want %q", key, got, want)
+		}
+	}
+	if len(grid.cells) != 5 || grid.maxRow != 5 || grid.maxColumn != 4 || grid.rowHeights[4] != 30 {
+		t.Fatalf("grid = %d cells, %d rows, %d columns, row heights %v", len(grid.cells), grid.maxRow, grid.maxColumn, grid.rowHeights)
+	}
+}
+
+func TestXLSXGridExtendsForDrawingAnchorAndSpill(t *testing.T) {
+	grid := xlsxGrid{maxRow: 1, maxColumn: 1, defaultRowHeight: 15, printScale: 1}
+	columnWidth, rowHeight := grid.columnWidth(1), grid.rowHeight(1)
+	// A drawing inside D6 adds only its own cell.
+	grid.extendForAnchor(5, 3, 1, 1, columnWidth/2, rowHeight/2)
+	if grid.maxRow != 6 || grid.maxColumn != 4 {
+		t.Fatalf("anchor cell area = %d rows x %d columns, want 6 x 4", grid.maxRow, grid.maxColumn)
+	}
+	// A drawing that starts in D6 and is 2.5 cells in each direction reaches F8.
+	grid.extendForAnchor(5, 3, 0, 0, columnWidth*2.5, rowHeight*2.5)
+	if grid.maxRow != 8 || grid.maxColumn != 6 {
+		t.Fatalf("spill area = %d rows x %d columns, want 8 x 6", grid.maxRow, grid.maxColumn)
+	}
+}
+
+func TestXLSXUsedAreaCountsValuesFillsBordersAndMerges(t *testing.T) {
+	fill := PDFColorBlack
+	styles := []xlsxStyle{{}, {fill: &fill}, {border: xlsxBorder{bottom: 0.75}}}
+	grid := xlsxGrid{maxRow: 90, maxColumn: 30, merges: []xlsxMerge{
+		{startRow: 2, startColumn: 1, endRow: 2, endColumn: 6},
+		{startRow: 40, startColumn: 1, endRow: 50, endColumn: 9},
+	}, cells: map[[2]int]xlsxCell{
+		{2, 1}:   {row: 2, column: 1, value: "Merged title"},
+		{3, 4}:   {row: 3, column: 4, style: 1},
+		{7, 2}:   {row: 7, column: 2, style: 2},
+		{40, 1}:  {row: 40, column: 1, value: "  "},
+		{90, 30}: {row: 90, column: 30},
+	}}
+	grid.trimToUsedArea(styles)
+	if grid.maxRow != 7 || grid.maxColumn != 6 {
+		t.Fatalf("used area = %d rows x %d columns, want 7 x 6", grid.maxRow, grid.maxColumn)
+	}
+	empty := xlsxGrid{maxRow: 5, maxColumn: 5, cells: map[[2]int]xlsxCell{{5, 5}: {row: 5, column: 5}}}
+	empty.trimToUsedArea(styles)
+	if empty.maxRow != 0 || empty.maxColumn != 0 {
+		t.Fatalf("empty used area = %d x %d, want 0 x 0", empty.maxRow, empty.maxColumn)
+	}
+}
+
+func TestVisibleXLSXWorksheetsGiveEverySheetNameAndDateSystem(t *testing.T) {
+	files, err := openOfficePackage(officePackageBytes(t, map[string]string{
+		"xl/workbook.xml": `<workbook><workbookPr date1904="1"/><sheets><sheet name="Plain"/><sheet name="Area"/></sheets><definedNames>` +
+			`<definedName name="_xlnm.Print_Area" localSheetId="1">Area!$A$1:$B$2</definedName></definedNames></workbook>`,
+		"xl/worksheets/sheet1.xml": `<worksheet><sheetData/></worksheet>`,
+		"xl/worksheets/sheet2.xml": `<worksheet><sheetData/></worksheet>`,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, settings, err := visibleXLSXWorksheets(files, []string{"xl/worksheets/sheet1.xml", "xl/worksheets/sheet2.xml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, area := settings["xl/worksheets/sheet1.xml"], settings["xl/worksheets/sheet2.xml"]
+	if plain.sheetName != "Plain" || !plain.date1904 || len(plain.areas) != 0 {
+		t.Fatalf("sheet without defined names = %+v", plain)
+	}
+	if area.sheetName != "Area" || !area.date1904 || len(area.areas) != 1 {
+		t.Fatalf("sheet with a print area = %+v", area)
 	}
 }

@@ -176,8 +176,16 @@ column print ranges, repeated print-title rows and columns, hidden rows and
 columns, percentage scaling, fit-to-page mode, manual page breaks, and horizontal/
 vertical print centering. It keeps
 formatted empty cells inside the print area, so printable template tables are
-not discarded merely because they have no text. Sheets without a print area
-retain their previous rendering path.
+not discarded merely because they have no text.
+
+In a workbook with styles, a sheet without a print area uses the same grid
+renderer over its used area, which starts at A1 and ends at the last cell with a
+value, fill, or border, extended to cover pictures and charts. Such a sheet falls
+back to its previous text rendering path when the grid renderer cannot process
+it or finds no used cells. Two cases keep their previous rendering for sheets
+without a print area: workbooks without styles use the text rendering path, and
+workbooks with formulas that have no cached values use the calculated grid over
+the full sheet dimension.
 
 Grid styles resolve RGB and workbook theme colors, including HSL luminance
 tints, for fonts and solid fills. Printed grids also apply conditional solid
@@ -190,8 +198,8 @@ Printed grids use matching registered font families/variants, or installed
 Windows Calibri/Arial regular, bold, italic, and bold-italic TTF files when
 available. Actual glyph advance widths and font ascent/descent are used for
 alignment and shrink-to-fit. Missing/unrecognized font families keep the
-built-in PDF font fallback; non-print-area worksheets retain their previous
-font-rendering path. Register variant names such as `Calibri Bold Italic` for
+built-in PDF font fallback; worksheets on the text rendering path retain their
+previous font rendering. Register variant names such as `Calibri Bold Italic` for
 portable source-font matching. Fonts are embedded without subsetting; no font
 binaries are distributed with MiniPdf.
 

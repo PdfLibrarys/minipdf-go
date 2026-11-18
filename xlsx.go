@@ -56,11 +56,28 @@ func convertXLSX(input []byte, options ConversionOptions) ([]byte, error) {
 	document := NewPDFDocument()
 	fallbackPageSize := PageSizeA4
 	for _, name := range worksheets {
-		if settings := printSettings[strings.ToLower(name)]; len(settings.areas) > 0 {
+		settings := printSettings[strings.ToLower(name)]
+		if len(settings.areas) > 0 {
 			if err := renderXLSXWorksheet(document, files, name, sharedStrings, styles, differentialFills, options, settings); err != nil {
 				return nil, err
 			}
 			continue
+		}
+		if len(styles) > 0 {
+			// In a workbook with styles, a sheet without a defined print area
+			// prints its used cells with the same layout as a sheet that
+			// defines one. The text layout below remains the fallback for a
+			// sheet that the grid layout rejects or finds no used cells in, so
+			// that such a sheet converts as it did before. The grid layout
+			// reports its errors before it adds a page; truncating guards
+			// against a later change that breaks that order.
+			settings.usedArea = true
+			pageCount := len(document.pages)
+			renderErr := renderXLSXWorksheet(document, files, name, sharedStrings, styles, differentialFills, options, settings)
+			if renderErr == nil && len(document.pages) > pageCount {
+				continue
+			}
+			document.pages = document.pages[:pageCount]
 		}
 		worksheetXML, readErr := files.read(name)
 		if readErr != nil {
@@ -265,17 +282,21 @@ func visibleXLSXWorksheets(files officePackage, worksheets []string) ([]string, 
 		}
 	}
 	printSettings := make(map[string]xlsxPrintSettings)
-	for index, settings := range settingsByIndex {
-		settings.date1904 = date1904
-		if index < len(sheetNames) {
-			settings.sheetName = sheetNames[index]
-		}
+	for index := range settingsByIndex {
 		if index >= len(sheetParts) {
 			return nil, nil, fmt.Errorf("parse %s: print settings refer to missing sheet %d", workbookName, index)
 		}
-		if part := sheetParts[index]; worksheetParts[part] {
-			printSettings[part] = settings
+	}
+	// Every sheet gets settings, because a sheet without defined names still
+	// needs the workbook date system and its own name when it is printed.
+	for index, part := range sheetParts {
+		if !worksheetParts[part] {
+			continue
 		}
+		settings := settingsByIndex[index]
+		settings.date1904 = date1904
+		settings.sheetName = sheetNames[index]
+		printSettings[part] = settings
 	}
 	return visible, printSettings, nil
 }

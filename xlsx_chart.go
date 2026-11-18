@@ -316,12 +316,21 @@ func (grid xlsxGrid) rowOffset(rowCount int) float64 {
 }
 
 func (grid *xlsxGrid) extendForChart(chart xlsxChart) {
-	chartRight := grid.columnOffset(chart.anchorColumn) + chart.columnOffset + chart.width
-	for column := chart.anchorColumn + 1; grid.columnOffset(column) < chartRight; column++ {
+	grid.extendForAnchor(chart.anchorRow, chart.anchorColumn, chart.rowOffset, chart.columnOffset, chart.width, chart.height)
+}
+
+// extendForAnchor grows the grid to cover the cell that holds a drawing's
+// top-left corner and the rows and columns the drawing spills into. anchorRow
+// and anchorColumn count the rows and columns before that cell.
+func (grid *xlsxGrid) extendForAnchor(anchorRow, anchorColumn int, rowOffset, columnOffset, width, height float64) {
+	grid.maxRow = max(grid.maxRow, anchorRow+1)
+	grid.maxColumn = max(grid.maxColumn, anchorColumn+1)
+	right := grid.columnOffset(anchorColumn) + columnOffset + width
+	for column := anchorColumn + 1; grid.columnOffset(column) < right; column++ {
 		grid.maxColumn = max(grid.maxColumn, column+1)
 	}
-	chartBottom := grid.rowOffset(chart.anchorRow) + chart.rowOffset + chart.height
-	for row := chart.anchorRow + 1; grid.rowOffset(row) < chartBottom; row++ {
+	bottom := grid.rowOffset(anchorRow) + rowOffset + height
+	for row := anchorRow + 1; grid.rowOffset(row) < bottom; row++ {
 		grid.maxRow = max(grid.maxRow, row+1)
 	}
 }
