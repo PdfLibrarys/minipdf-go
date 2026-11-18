@@ -318,15 +318,24 @@ func renderXLSXWorksheet(document *PDFDocument, files officePackage, name string
 	if err != nil {
 		return fmt.Errorf("parse %s: %w", name, err)
 	}
+	if settings.usedArea {
+		grid.trimToUsedArea(styles)
+	}
 	grid.charts, err = readXLSXCharts(files, name, &grid)
 	if err != nil {
 		return err
 	}
 	grid.applyOptions(options)
-	if len(settings.areas) > 0 {
+	if len(settings.areas) > 0 || settings.usedArea {
 		grid.pictures, err = readXLSXPictures(files, name, grid)
 		if err != nil {
 			return err
+		}
+		if settings.usedArea {
+			for _, picture := range grid.pictures {
+				grid.extendForAnchor(picture.anchorRow-1, picture.anchorColumn-1, picture.rowOffset, picture.columnOffset, picture.width, picture.height)
+			}
+			settings.areas = []xlsxMerge{{startRow: 1, startColumn: 1, endRow: 1048576, endColumn: 16384}}
 		}
 		for key, cell := range grid.cells {
 			if cell.value != "" && cell.numeric {
@@ -398,6 +407,12 @@ func readXLSXGrid(data []byte, sharedStrings []string) (xlsxGrid, error) {
 			continue
 		}
 		switch start.Name.Local {
+		case "extLst":
+			// Extensions reuse worksheet element names with other schemas,
+			// such as x14:conditionalFormatting, which has no sqref attribute.
+			if err := decoder.Skip(); err != nil {
+				return xlsxGrid{}, err
+			}
 		case "printOptions":
 			grid.horizontalCentered = attrValue(start, "horizontalCentered") == "1" || attrValue(start, "horizontalCentered") == "true"
 			grid.verticalCentered = attrValue(start, "verticalCentered") == "1" || attrValue(start, "verticalCentered") == "true"

@@ -56,7 +56,11 @@ func convertXLSX(input []byte, options ConversionOptions) ([]byte, error) {
 	document := NewPDFDocument()
 	fallbackPageSize := PageSizeA4
 	for _, name := range worksheets {
-		if settings := printSettings[strings.ToLower(name)]; len(settings.areas) > 0 {
+		settings := printSettings[strings.ToLower(name)]
+		// A styled sheet without a defined print area prints its used cells
+		// with the same layout as a sheet that defines one.
+		settings.usedArea = len(settings.areas) == 0 && len(styles) > 0
+		if len(settings.areas) > 0 || settings.usedArea {
 			if err := renderXLSXWorksheet(document, files, name, sharedStrings, styles, differentialFills, options, settings); err != nil {
 				return nil, err
 			}
@@ -265,17 +269,21 @@ func visibleXLSXWorksheets(files officePackage, worksheets []string) ([]string, 
 		}
 	}
 	printSettings := make(map[string]xlsxPrintSettings)
-	for index, settings := range settingsByIndex {
-		settings.date1904 = date1904
-		if index < len(sheetNames) {
-			settings.sheetName = sheetNames[index]
-		}
+	for index := range settingsByIndex {
 		if index >= len(sheetParts) {
 			return nil, nil, fmt.Errorf("parse %s: print settings refer to missing sheet %d", workbookName, index)
 		}
-		if part := sheetParts[index]; worksheetParts[part] {
-			printSettings[part] = settings
+	}
+	// Every sheet gets settings, because a sheet without defined names still
+	// needs the workbook date system and its own name when it is printed.
+	for index, part := range sheetParts {
+		if !worksheetParts[part] {
+			continue
 		}
+		settings := settingsByIndex[index]
+		settings.date1904 = date1904
+		settings.sheetName = sheetNames[index]
+		printSettings[part] = settings
 	}
 	return visible, printSettings, nil
 }

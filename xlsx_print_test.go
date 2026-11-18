@@ -252,3 +252,72 @@ func TestXLSXPrintAreaPaintsTextAfterAdjacentFills(t *testing.T) {
 		t.Fatal("adjacent cell fill can paint over the overflowing report title")
 	}
 }
+
+func TestConvertXLSXPrintsUsedAreaOfStyledSheetWithoutPrintArea(t *testing.T) {
+	entries := map[string]string{
+		"xl/workbook.xml": `<workbook><sheets><sheet name="Forecast"/></sheets></workbook>`,
+		"xl/styles.xml": `<styleSheet><fonts><font><sz val="11"/></font></fonts>` +
+			`<fills><fill><patternFill/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0000FF"/></patternFill></fill></fills>` +
+			`<cellXfs><xf/><xf fillId="1"/><xf numFmtId="4"/></cellXfs></styleSheet>`,
+		// The dimension reaches row 200 only through a cell whose style paints
+		// nothing, and the extension list repeats a worksheet element name.
+		"xl/worksheets/sheet1.xml": `<worksheet xmlns:x14="urn:x14"><dimension ref="A1:C200"/><sheetData>` +
+			`<row r="1"><c r="A1" s="1" t="inlineStr"><is><t>Title</t></is></c></row>` +
+			`<row r="2"><c r="B2" s="2"><f>B3*2</f><v>1234.5</v></c></row>` +
+			`<row r="200"><c r="C200" s="0"/></row></sheetData>` +
+			`<extLst><ext><x14:conditionalFormattings><x14:conditionalFormatting><x14:cfRule type="dataBar"/>` +
+			`</x14:conditionalFormatting></x14:conditionalFormattings></ext></extLst></worksheet>`,
+	}
+	pdf, err := ConvertBytesToPDF(officePackageBytes(t, entries))
+	assertPDFContains(t, pdf, err, "Title", "1,234.50", "0 0 1 rg")
+	if count := bytes.Count(pdf, []byte("/Type /Page ")); count != 1 {
+		t.Fatalf("pages = %d, want the used cells on 1 page", count)
+	}
+}
+
+func TestXLSXUsedAreaCountsValuesFillsBordersAndMerges(t *testing.T) {
+	fill := PDFColorBlack
+	styles := []xlsxStyle{{}, {fill: &fill}, {border: xlsxBorder{bottom: 0.75}}}
+	grid := xlsxGrid{maxRow: 90, maxColumn: 30, merges: []xlsxMerge{
+		{startRow: 2, startColumn: 1, endRow: 2, endColumn: 6},
+		{startRow: 40, startColumn: 1, endRow: 50, endColumn: 9},
+	}, cells: map[[2]int]xlsxCell{
+		{2, 1}:   {row: 2, column: 1, value: "Merged title"},
+		{3, 4}:   {row: 3, column: 4, style: 1},
+		{7, 2}:   {row: 7, column: 2, style: 2},
+		{40, 1}:  {row: 40, column: 1},
+		{90, 30}: {row: 90, column: 30},
+	}}
+	grid.trimToUsedArea(styles)
+	if grid.maxRow != 7 || grid.maxColumn != 6 {
+		t.Fatalf("used area = %d rows x %d columns, want 7 x 6", grid.maxRow, grid.maxColumn)
+	}
+	empty := xlsxGrid{maxRow: 5, maxColumn: 5, cells: map[[2]int]xlsxCell{{5, 5}: {row: 5, column: 5}}}
+	empty.trimToUsedArea(styles)
+	if empty.maxRow != 0 || empty.maxColumn != 0 {
+		t.Fatalf("empty used area = %d x %d, want 0 x 0", empty.maxRow, empty.maxColumn)
+	}
+}
+
+func TestVisibleXLSXWorksheetsGiveEverySheetNameAndDateSystem(t *testing.T) {
+	files, err := openOfficePackage(officePackageBytes(t, map[string]string{
+		"xl/workbook.xml": `<workbook><workbookPr date1904="1"/><sheets><sheet name="Plain"/><sheet name="Area"/></sheets><definedNames>` +
+			`<definedName name="_xlnm.Print_Area" localSheetId="1">Area!$A$1:$B$2</definedName></definedNames></workbook>`,
+		"xl/worksheets/sheet1.xml": `<worksheet><sheetData/></worksheet>`,
+		"xl/worksheets/sheet2.xml": `<worksheet><sheetData/></worksheet>`,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, settings, err := visibleXLSXWorksheets(files, []string{"xl/worksheets/sheet1.xml", "xl/worksheets/sheet2.xml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, area := settings["xl/worksheets/sheet1.xml"], settings["xl/worksheets/sheet2.xml"]
+	if plain.sheetName != "Plain" || !plain.date1904 || len(plain.areas) != 0 {
+		t.Fatalf("sheet without defined names = %+v", plain)
+	}
+	if area.sheetName != "Area" || !area.date1904 || len(area.areas) != 1 {
+		t.Fatalf("sheet with a print area = %+v", area)
+	}
+}
