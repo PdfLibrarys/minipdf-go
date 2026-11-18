@@ -319,8 +319,9 @@ func (grid *xlsxGrid) extendForChart(chart xlsxChart) {
 	grid.extendForAnchor(chart.anchorRow, chart.anchorColumn, chart.rowOffset, chart.columnOffset, chart.width, chart.height)
 }
 
-// extendForAnchor grows the grid to cover a drawing anchored after the given
-// zero-based row and column.
+// extendForAnchor grows the grid to cover the rows and columns a drawing spills
+// into. anchorRow and anchorColumn count the rows and columns before the cell
+// that holds the drawing's top-left corner.
 func (grid *xlsxGrid) extendForAnchor(anchorRow, anchorColumn int, rowOffset, columnOffset, width, height float64) {
 	right := grid.columnOffset(anchorColumn) + columnOffset + width
 	for column := anchorColumn + 1; grid.columnOffset(column) < right; column++ {

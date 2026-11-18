@@ -333,6 +333,8 @@ func renderXLSXWorksheet(document *PDFDocument, files officePackage, name string
 		}
 		if settings.usedArea {
 			for _, picture := range grid.pictures {
+				grid.maxRow = max(grid.maxRow, picture.anchorRow)
+				grid.maxColumn = max(grid.maxColumn, picture.anchorColumn)
 				grid.extendForAnchor(picture.anchorRow-1, picture.anchorColumn-1, picture.rowOffset, picture.columnOffset, picture.width, picture.height)
 			}
 			settings.areas = []xlsxMerge{{startRow: 1, startColumn: 1, endRow: 1048576, endColumn: 16384}}

@@ -110,7 +110,7 @@ func (grid *xlsxGrid) trimToUsedArea(styles []xlsxStyle) {
 	for key, cell := range grid.cells {
 		style := styleAt(styles, cell.style)
 		border := style.border
-		if cell.value == "" && style.fill == nil && border.left == 0 && border.right == 0 && border.top == 0 && border.bottom == 0 {
+		if strings.TrimSpace(cell.value) == "" && style.fill == nil && border.left == 0 && border.right == 0 && border.top == 0 && border.bottom == 0 {
 			continue
 		}
 		used[key] = true

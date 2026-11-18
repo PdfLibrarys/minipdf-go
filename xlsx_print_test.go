@@ -2,6 +2,8 @@ package minipdf
 
 import (
 	"bytes"
+	"image"
+	"image/png"
 	"strings"
 	"testing"
 )
@@ -275,6 +277,50 @@ func TestConvertXLSXPrintsUsedAreaOfStyledSheetWithoutPrintArea(t *testing.T) {
 	}
 }
 
+func TestConvertXLSXUsedAreaFallsBackToTextLayout(t *testing.T) {
+	styles := `<styleSheet><fonts><font><sz val="11"/></font></fonts><cellXfs><xf/></cellXfs></styleSheet>`
+	tests := map[string]string{
+		"unsupported footer code": `<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Kept</t></is></c></row></sheetData>` +
+			`<headerFooter><oddFooter>&amp;D</oddFooter></headerFooter></worksheet>`,
+		"cells without references": `<worksheet><sheetData><row><c t="inlineStr"><is><t>Kept</t></is></c></row></sheetData></worksheet>`,
+	}
+	for name, worksheet := range tests {
+		t.Run(name, func(t *testing.T) {
+			pdf, err := ConvertBytesToPDF(officePackageBytes(t, map[string]string{
+				"xl/workbook.xml": `<workbook><sheets><sheet name="Data"/></sheets></workbook>`,
+				"xl/styles.xml":   styles, "xl/worksheets/sheet1.xml": worksheet,
+			}))
+			assertPDFContains(t, pdf, err, "Kept")
+			if count := bytes.Count(pdf, []byte("/Type /Page ")); count != 1 {
+				t.Fatalf("pages = %d, want 1 text page and no partial grid pages", count)
+			}
+		})
+	}
+}
+
+func TestConvertXLSXUsedAreaIncludesPictureBeyondCells(t *testing.T) {
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	pdf, err := ConvertBytesToPDF(officePackageBytes(t, map[string]string{
+		"xl/workbook.xml": `<workbook><sheets><sheet name="Logo"/></sheets></workbook>`,
+		"xl/styles.xml":   `<styleSheet><fonts><font><sz val="11"/></font></fonts><cellXfs><xf/></cellXfs></styleSheet>`,
+		"xl/worksheets/sheet1.xml": `<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Title</t></is></c></row>` +
+			`</sheetData></worksheet>`,
+		"xl/worksheets/_rels/sheet1.xml.rels": `<Relationships><Relationship Type="urn:office/drawing" Target="../drawings/drawing1.xml"/></Relationships>`,
+		// The picture fits inside D6, which no cell reaches.
+		"xl/drawings/drawing1.xml": `<wsDr><oneCellAnchor><from><col>3</col><row>5</row></from><ext cx="127000" cy="127000"/>` +
+			`<pic><blipFill><blip embed="image"/></blipFill></pic><clientData/></oneCellAnchor></wsDr>`,
+		"xl/drawings/_rels/drawing1.xml.rels": `<Relationships><Relationship Id="image" Type="urn:office/image" Target="../media/logo.png"/></Relationships>`,
+		"xl/media/logo.png":                   encoded.String(),
+	}))
+	assertPDFContains(t, pdf, err, "Title", "/ASCIIHexDecode /FlateDecode")
+	if count := bytes.Count(pdf, []byte("/Type /Page ")); count != 1 {
+		t.Fatalf("pages = %d, want 1", count)
+	}
+}
+
 func TestXLSXUsedAreaCountsValuesFillsBordersAndMerges(t *testing.T) {
 	fill := PDFColorBlack
 	styles := []xlsxStyle{{}, {fill: &fill}, {border: xlsxBorder{bottom: 0.75}}}
@@ -285,7 +331,7 @@ func TestXLSXUsedAreaCountsValuesFillsBordersAndMerges(t *testing.T) {
 		{2, 1}:   {row: 2, column: 1, value: "Merged title"},
 		{3, 4}:   {row: 3, column: 4, style: 1},
 		{7, 2}:   {row: 7, column: 2, style: 2},
-		{40, 1}:  {row: 40, column: 1},
+		{40, 1}:  {row: 40, column: 1, value: "  "},
 		{90, 30}: {row: 90, column: 30},
 	}}
 	grid.trimToUsedArea(styles)
