@@ -333,8 +333,6 @@ func renderXLSXWorksheet(document *PDFDocument, files officePackage, name string
 		}
 		if settings.usedArea {
 			for _, picture := range grid.pictures {
-				grid.maxRow = max(grid.maxRow, picture.anchorRow)
-				grid.maxColumn = max(grid.maxColumn, picture.anchorColumn)
 				grid.extendForAnchor(picture.anchorRow-1, picture.anchorColumn-1, picture.rowOffset, picture.columnOffset, picture.width, picture.height)
 			}
 			settings.areas = []xlsxMerge{{startRow: 1, startColumn: 1, endRow: 1048576, endColumn: 16384}}
@@ -392,6 +390,7 @@ func readXLSXGrid(data []byte, sharedStrings []string) (xlsxGrid, error) {
 		footerMargin: 36,
 	}
 	breakKind := ""
+	currentRow, nextColumn := 0, 1
 	decoder := xml.NewDecoder(bytes.NewReader(data))
 	for {
 		token, err := decoder.Token()
@@ -462,7 +461,13 @@ func readXLSXGrid(data []byte, sharedStrings []string) (xlsxGrid, error) {
 				grid.hiddenColumns[column] = attrValue(start, "hidden") == "1" || attrValue(start, "hidden") == "true"
 			}
 		case "row":
+			// The r attribute is optional: a row or cell without it follows
+			// the previous one.
 			row, _ := strconv.Atoi(attrValue(start, "r"))
+			if row == 0 {
+				row = currentRow + 1
+			}
+			currentRow, nextColumn = row, 1
 			if height, err := strconv.ParseFloat(attrValue(start, "ht"), 64); err == nil && height > 0 {
 				grid.rowHeights[row] = height
 			}
@@ -471,6 +476,10 @@ func readXLSXGrid(data []byte, sharedStrings []string) (xlsxGrid, error) {
 		case "c":
 			reference := attrValue(start, "r")
 			row, column := xlsxCellPosition(reference)
+			if reference == "" {
+				row, column = currentRow, nextColumn
+			}
+			nextColumn = column + 1
 			value, formula, err := decodeWorksheetCellContent(decoder, start, sharedStrings)
 			if err != nil {
 				return xlsxGrid{}, err

@@ -282,7 +282,8 @@ func TestConvertXLSXUsedAreaFallsBackToTextLayout(t *testing.T) {
 	tests := map[string]string{
 		"unsupported footer code": `<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Kept</t></is></c></row></sheetData>` +
 			`<headerFooter><oddFooter>&amp;D</oddFooter></headerFooter></worksheet>`,
-		"cells without references": `<worksheet><sheetData><row><c t="inlineStr"><is><t>Kept</t></is></c></row></sheetData></worksheet>`,
+		"invalid conditional range": `<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Kept</t></is></c></row></sheetData>` +
+			`<conditionalFormatting sqref="A:A"><cfRule type="expression" priority="1"><formula>TRUE</formula></cfRule></conditionalFormatting></worksheet>`,
 	}
 	for name, worksheet := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -318,6 +319,39 @@ func TestConvertXLSXUsedAreaIncludesPictureBeyondCells(t *testing.T) {
 	assertPDFContains(t, pdf, err, "Title", "/ASCIIHexDecode /FlateDecode")
 	if count := bytes.Count(pdf, []byte("/Type /Page ")); count != 1 {
 		t.Fatalf("pages = %d, want 1", count)
+	}
+}
+
+func TestReadXLSXGridPlacesRowsAndCellsWithoutReferences(t *testing.T) {
+	grid, err := readXLSXGrid([]byte(`<worksheet><sheetData>`+
+		`<row><c t="inlineStr"><is><t>A1</t></is></c><c t="inlineStr"><is><t>B1</t></is></c></row>`+
+		`<row r="4" ht="30"><c r="C4" t="inlineStr"><is><t>C4</t></is></c><c t="inlineStr"><is><t>D4</t></is></c></row>`+
+		`<row><c t="inlineStr"><is><t>A5</t></is></c></row></sheetData></worksheet>`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[[2]int]string{{1, 1}: "A1", {1, 2}: "B1", {4, 3}: "C4", {4, 4}: "D4", {5, 1}: "A5"} {
+		if got := grid.cells[key].value; got != want {
+			t.Errorf("cell %v = %q, want %q", key, got, want)
+		}
+	}
+	if len(grid.cells) != 5 || grid.maxRow != 5 || grid.maxColumn != 4 || grid.rowHeights[4] != 30 {
+		t.Fatalf("grid = %d cells, %d rows, %d columns, row heights %v", len(grid.cells), grid.maxRow, grid.maxColumn, grid.rowHeights)
+	}
+}
+
+func TestXLSXGridExtendsForDrawingAnchorAndSpill(t *testing.T) {
+	grid := xlsxGrid{maxRow: 1, maxColumn: 1, defaultRowHeight: 15, printScale: 1}
+	columnWidth, rowHeight := grid.columnWidth(1), grid.rowHeight(1)
+	// A drawing inside D6 adds only its own cell.
+	grid.extendForAnchor(5, 3, 1, 1, columnWidth/2, rowHeight/2)
+	if grid.maxRow != 6 || grid.maxColumn != 4 {
+		t.Fatalf("anchor cell area = %d rows x %d columns, want 6 x 4", grid.maxRow, grid.maxColumn)
+	}
+	// A drawing that starts in D6 and is 2.5 cells in each direction reaches F8.
+	grid.extendForAnchor(5, 3, 0, 0, columnWidth*2.5, rowHeight*2.5)
+	if grid.maxRow != 8 || grid.maxColumn != 6 {
+		t.Fatalf("spill area = %d rows x %d columns, want 8 x 6", grid.maxRow, grid.maxColumn)
 	}
 }
 

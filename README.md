@@ -182,7 +182,10 @@ In a workbook with styles, a sheet without a print area uses the same grid
 renderer over its used area, which starts at A1 and ends at the last cell with a
 value, fill, or border, extended to cover pictures and charts. Such a sheet falls
 back to its previous text rendering path when the grid renderer cannot process
-it. Workbooks without styles keep the text rendering path.
+it or finds no used cells. Two cases keep their previous rendering for sheets
+without a print area: workbooks without styles use the text rendering path, and
+workbooks with formulas that have no cached values use the calculated grid over
+the full sheet dimension.
 
 Grid styles resolve RGB and workbook theme colors, including HSL luminance
 tints, for fonts and solid fills. Printed grids also apply conditional solid

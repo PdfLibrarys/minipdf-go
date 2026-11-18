@@ -68,11 +68,13 @@ func convertXLSX(input []byte, options ConversionOptions) ([]byte, error) {
 			// prints its used cells with the same layout as a sheet that
 			// defines one. The text layout below remains the fallback for a
 			// sheet that the grid layout rejects or finds no used cells in, so
-			// that such a sheet converts as it did before.
+			// that such a sheet converts as it did before. The grid layout
+			// reports its errors before it adds a page; truncating guards
+			// against a later change that breaks that order.
 			settings.usedArea = true
 			pageCount := len(document.pages)
-			err := renderXLSXWorksheet(document, files, name, sharedStrings, styles, differentialFills, options, settings)
-			if err == nil && len(document.pages) > pageCount {
+			renderErr := renderXLSXWorksheet(document, files, name, sharedStrings, styles, differentialFills, options, settings)
+			if renderErr == nil && len(document.pages) > pageCount {
 				continue
 			}
 			document.pages = document.pages[:pageCount]
